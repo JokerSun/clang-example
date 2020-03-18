@@ -1,6 +1,7 @@
-#include <stdio.h>
+#include "net/blocking_echo_server.h"
+#include "net/constants.h"
 
 int main() {
-    printf("Hello, World!\n");
+    start_server(SERVER_PORT);
     return 0;
 }

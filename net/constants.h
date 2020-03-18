@@ -1,0 +1,14 @@
+//
+// Created by lql on 2020/3/17.
+//
+
+#ifndef CLANG_EXAMPLE_CONSTANTS_H
+#define CLANG_EXAMPLE_CONSTANTS_H
+
+#define SERVER_PORT 8888
+
+#define BACKLOG 2
+
+#define BUFFER_SIZE 1024
+
+#endif //CLANG_EXAMPLE_CONSTANTS_H
