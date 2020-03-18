@@ -3,7 +3,7 @@
 //
 
 #include "constants.h"
-#include "server.h"
+#include "utils.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
@@ -12,11 +12,14 @@
 #include <stdbool.h>
 #include <netinet/in.h>
 #include <errno.h>
-#include "blocking_echo_server.h"
 
-void start_server(int port) {
+static void process(const int *fd);
 
-    // define fd, address
+void start_bio_server(int port) {
+
+    printf("Blocking io echo server starting.\n");
+
+    /* define fd, address */
 
     int socket_fd;
     struct sockaddr_in socket_address;
@@ -26,7 +29,7 @@ void start_server(int port) {
     socket_address.sin_addr.s_addr = htonl(INADDR_ANY);
     socket_address.sin_port = htons(port);
 
-    // open socket
+    /* open socket */
 
     if (fail(socket_fd = socket(AF_INET, SOCK_STREAM, 0))) {
         printf("Open socket error (%s)\n", strerror(errno));
@@ -35,7 +38,7 @@ void start_server(int port) {
         printf("Open socket.\n");
     }
 
-    // bind
+    /* bind */
 
     if (fail(bind(socket_fd, (struct sockaddr *) &socket_address, sizeof(socket_address)))) {
         printf("Bind error (%s)\n", strerror(errno));
@@ -44,7 +47,7 @@ void start_server(int port) {
         printf("Bind socket on '%d' port.\n", SERVER_PORT);
     }
 
-    // listen
+    /* listen */
 
     if (fail(listen(socket_fd, BACKLOG))) {
         printf("Listen error (%s)\n", strerror(errno));
@@ -53,7 +56,7 @@ void start_server(int port) {
         printf("Start listening.\n");
     }
 
-    // accept
+    /* accept */
 
     while (true) {
         socklen_t address_len = sizeof(struct sockaddr);
@@ -64,7 +67,7 @@ void start_server(int port) {
             continue;
         }
 
-        // run in other thread
+        /* run in other thread */
 
         pthread_t t;
         pthread_create(&t, NULL, (void *) process, &channel);
@@ -73,7 +76,7 @@ void start_server(int port) {
 
 }
 
-void process(const int *pfd) {
+static void process(const int *pfd) {
 
     int fd = *pfd;
     int read_len = 0;
@@ -84,18 +87,23 @@ void process(const int *pfd) {
 
     while (true) {
 
-        read_len = read(fd, buffer, BUFFER_SIZE);
+        /* read message */
 
+        read_len = read(fd, buffer, BUFFER_SIZE);
         if (read_len < 0) {
             printf("Chanel (%d) Read error (%s).\n", fd, strerror(errno));
             break;
         }
-
         printf("Chanel (%d) Read  <----- %d bytes.\n", fd, read_len);
+
+        /* write message */
 
         write_len = write(fd, buffer, read_len);
         printf("Chanel (%d) Write -----> %d bytes.\n", fd, write_len);
 
+        /* clean buffer */
+
+        bzero(buffer, BUFFER_SIZE);
     }
 
     close(fd);
