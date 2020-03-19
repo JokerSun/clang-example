@@ -13,7 +13,6 @@
 #include <errno.h>
 #include "utils.h"
 #include <sys/poll.h>
-#include "io_multiplex_echo_server.h"
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -21,9 +20,13 @@ static pthread_cond_t condition = PTHREAD_COND_INITIALIZER;
 
 static void process(const int *pfd);
 
-static int nio_read(int fd, char *buffer, int size);
+static int poll_read(int fd, char *buffer, int size);
 
-static int nio_write(int fd, char *buffer, int size);
+static int poll_write(int fd, char *buffer, int size);
+
+static int select_read(int fd, char *buffer, int size);
+
+static int select_write(int fd, char *buffer, int size);
 
 void start_io_multi_echo_server(int port) {
 
@@ -128,16 +131,15 @@ static void process(const int *pfd) {
 
     while (true) {
 
-        /* no blocking read */
-
-        read_len = nio_read(fd, buffer, BUFFER_SIZE);
+        /* poll read */
+        read_len = select_read(fd, buffer, BUFFER_SIZE);
 
         if (read_len <= 0) {
             break;
         }
 
-        /* no blocking write */
-        nio_write(fd, buffer, read_len);
+        /* poll write */
+        select_write(fd, buffer, read_len);
 
         bzero(buffer, BUFFER_SIZE);
     }
@@ -147,56 +149,122 @@ static void process(const int *pfd) {
 
 }
 
-static int nio_write(int fd, char *buffer, int size) {
+static int poll_read(int fd, char *buffer, int size) {
+
+    struct pollfd poll_fd;
+    poll_fd.fd = fd;
+    poll_fd.events = POLLIN;
     int flag;
-    for (int i = 0; true; i++) {
-        flag = send(fd, buffer, size, MSG_DONTWAIT);
-        switch (flag) {
-            case 0:
-                printf("Chanel (%d) Connection closed.\n", fd);
-                return 0;
-            case -1 :
-                if (EAGAIN != errno) {
-                    /* read error */
-                    printf("Chanel (%d) Write error (%s).\n", fd, strerror(errno));
-                    return -1;
-                }
-                /* message temporarily unavailable */
-                if (0 == i % 1000) {
-                    printf("Chanel (%d) Connection temporarily unwritable.\n", fd);
-                    usleep(200000);
-                }
-            default:
-                printf("Chanel (%d) Write ------> %d bytes.\n", fd, flag);
-                return flag;
+
+    while (true) {
+        /* poll */
+        flag = poll(&poll_fd, 1, 5000);
+
+        if (-1 == flag) {
+            printf("Poll read error (%s).\n", strerror(errno));
+            return -1;
         }
+
+        if (0 == flag) {
+            printf("Poll read time out.\n");
+            continue;
+        }
+
+        if (!poll_fd.revents & POLLIN) {
+            printf("Invalid revent(%d).\n", poll_fd.revents);
+            continue;
+        }
+
+        int read_len = read(fd, buffer, size);
+        printf("Chanel (%d) Read  <----- %d bytes.\n", fd, read_len);
+        return read_len;
+    }
+
+}
+
+static int poll_write(int fd, char *buffer, int size) {
+    struct pollfd poll_fd;
+    poll_fd.fd = fd;
+    poll_fd.events = POLLOUT;
+    int flag;
+
+    while (true) {
+        /* poll */
+        flag = poll(&poll_fd, 1, 5000);
+
+        if (-1 == flag) {
+            printf("Poll write error (%s).\n", strerror(errno));
+            return -1;
+        }
+
+        if (0 == flag) {
+            printf("Poll write time out.\n");
+            continue;
+        }
+
+        if (!poll_fd.revents & POLLOUT) {
+            printf("Invalid revent(%d).\n", poll_fd.revents);
+            continue;
+        }
+
+        int write_len = write(fd, buffer, size);
+        printf("Chanel (%d) Write -----> %d bytes.\n", fd, write_len);
+        return write_len;
+
     }
 }
 
-static int nio_read(int fd, char *buffer, int size) {
-    int flag;
-    for (int i = 0; true; i++) {
-        flag = recv(fd, buffer, BUFFER_SIZE, MSG_DONTWAIT);
-        if (0 == flag) {
-            /* no message to read */
-            printf("Chanel (%d) Connection closed.\n", fd);
-            return 0;
-        } else if (-1 == flag) {
-            if (EAGAIN != errno) {
-                /* read error */
-                printf("Chanel (%d) Read error (%s).\n", fd, strerror(errno));
-                break;
-            }
-            /* message temporarily unavailable */
-            if (0 == i % 1000) {
-                printf("Chanel (%d) Message temporarily unavailable.\n", fd);
-                usleep(200000);
-            }
-        } else {
-            printf("Chanel (%d) Read  <----- %d bytes.\n", fd, flag);
-            return flag;
+static int select_read(int fd, char *buffer, int size) {
+    struct timespec time_spec;
+    time_spec.tv_sec = 5; // 5sec
+    fd_set fdSet;
+    FD_ZERO(&fdSet);
+    FD_SET(fd, &fdSet);
+
+    while (true) {
+
+        int retval = pselect(fd + 1, &fdSet, NULL, NULL, &time_spec, NULL);
+
+        if (-1 == retval) {
+            printf("Select read error (%s).\n", strerror(errno));
+            return -1;
         }
+
+        if (0 == retval) {
+            printf("Select read time out.\n");
+            continue;
+        }
+
+        int read_len = read(fd, buffer, size);
+        printf("Chanel (%d) Read  <----- %d bytes.\n", fd, read_len);
+        return read_len;
     }
 
-    return -1;
+}
+
+static int select_write(int fd, char *buffer, int size) {
+    struct timespec time_spec;
+    time_spec.tv_sec = 5; // 5sec
+    fd_set fdSet;
+    FD_ZERO(&fdSet);
+    FD_SET(fd, &fdSet);
+
+    while (true) {
+
+        int retval = pselect(fd + 1, NULL, &fdSet, NULL, &time_spec, NULL);
+
+        if (-1 == retval) {
+            printf("Select write error (%s).\n", strerror(errno));
+            return -1;
+        }
+
+        if (0 == retval) {
+            printf("Select write time out.\n");
+            continue;
+        }
+
+        int write_len = write(fd, buffer, size);
+        printf("Chanel (%d) Write -----> %d bytes.\n", fd, write_len);
+        return write_len;
+    }
 }
