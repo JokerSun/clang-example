@@ -2,8 +2,8 @@
 // Created by lql on 2020/3/17.
 //
 
-#include "constants.h"
-#include "utils.h"
+#include "../include/constants.h"
+#include "../include/utils.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>

@@ -1,7 +1,10 @@
 //
-// Created by lql on 2020/3/18.
+// Created by lql on 2020/3/20.
 //
 
+#define _GNU_SOURCE         /* See feature_test_macros(7) */
+
+#include <fcntl.h>
 #include "../include/constants.h"
 #include <pthread.h>
 #include <stdio.h>
@@ -11,6 +14,7 @@
 #include <stdbool.h>
 #include <netinet/in.h>
 #include <errno.h>
+#include <sys/sendfile.h>
 #include "../include/utils.h"
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
@@ -19,11 +23,7 @@ static pthread_cond_t condition = PTHREAD_COND_INITIALIZER;
 
 static void process(const int *pfd);
 
-static int nio_read(int fd, char *buffer, int size);
-
-static int nio_write(int fd, char *buffer, int size);
-
-void start_nio_server(int port) {
+void start_splice_pipe_server(int port) {
 
     printf("No blocking io echo server starting.\n");
 
@@ -39,7 +39,7 @@ void start_nio_server(int port) {
 
     /* open socket and set type SOCK_STREAM and SOCK_NONBLOCK */
 
-    if (fail(socket_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0))) {
+    if (fail(socket_fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP))) {
         printf("Open socket error (%s)\n", strerror(errno));
         return;
     } else {
@@ -104,83 +104,58 @@ static void process(const int *pfd) {
     pthread_cond_signal(&condition);
     pthread_mutex_unlock(&lock);
 
-    int read_len = 0;
-    int write_len = 0;
-    char buffer[BUFFER_SIZE];
-
     printf("Accept channel '%d'.\n", fd);
+
+//    /* set socket busy poll */
+//    int val = 10 * 1000; // 10ms
+//    int return_value = setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL, &val, sizeof(val));
+//    if (-1 == return_value) {
+//        printf("Set socket busy poll error (%s).\n", strerror(errno));
+//        goto final;
+//    }
+
+    /* create pipe */
+
+#define SPLICE_MAX (512*1024)
+
+    int n;
+
+    int pipe_fd[2];
+    pipe(pipe_fd);
+
+    fcntl(pipe_fd[0], F_SETPIPE_SZ, SPLICE_MAX);
 
     while (true) {
 
-        /* no blocking read */
+        n = splice(fd, NULL, pipe_fd[1], NULL, SPLICE_MAX, SPLICE_F_MOVE);
 
-        read_len = nio_read(fd, buffer, BUFFER_SIZE);
-
-        if (read_len <= 0) {
+        if (n < 0) {
+            printf("Splice read error (%d:%s).\n", errno, strerror(errno));
             break;
         }
 
-        /* no blocking write */
-        nio_write(fd, buffer, read_len);
-
-        bzero(buffer, BUFFER_SIZE);
-    }
-
-    close(fd);
-    printf("Close chanel (%d).\n", fd);
-
-}
-
-static int nio_write(int fd, char *buffer, int size) {
-    int flag;
-    for (int i = 0; true; i++) {
-        flag = send(fd, buffer, size, MSG_DONTWAIT);
-        switch (flag) {
-            case 0:
-                printf("Chanel (%d) Connection closed.\n", fd);
-                return 0;
-            case -1 :
-                if (EAGAIN != errno) {
-                    /* read error */
-                    printf("Chanel (%d) Write error (%s).\n", fd, strerror(errno));
-                    return -1;
-                }
-                /* message temporarily unavailable */
-                if (0 == i % 1000) {
-                    printf("Chanel (%d) Connection temporarily unwritable.\n", fd);
-                    usleep(200000);
-                }
-            default:
-                printf("Chanel (%d) Write ------> %d bytes.\n", fd, flag);
-                return flag;
+        if (n == 0) {
+            printf("No message to transfer.\n");
+            break;
         }
-    }
-}
 
-static int nio_read(int fd, char *buffer, int size) {
-    int flag;
-    for (int i = 0; true; i++) {
-        flag = recv(fd, buffer, BUFFER_SIZE, MSG_DONTWAIT);
-        if (0 == flag) {
-            /* no message to read */
-            printf("Chanel (%d) Connection closed.\n", fd);
-            return 0;
-        } else if (-1 == flag) {
-            if (EAGAIN != errno) {
-                /* read error */
-                printf("Chanel (%d) Read error (%s).\n", fd, strerror(errno));
-                break;
-            }
-            /* message temporarily unavailable */
-            if (0 == i % 1000) {
-                printf("Chanel (%d) Message temporarily unavailable.\n", fd);
-                usleep(200000);
-            }
-        } else {
-            printf("Chanel (%d) Read  <----- %d bytes.\n", fd, flag);
-            return flag;
+        printf("Chanel (%d) Read  <----- %d bytes.\n", fd, n);
+
+        n = splice(pipe_fd[0], NULL, fd, NULL, n, SPLICE_F_MOVE);
+
+        if (n < 0) {
+            printf("Splice write error (%s).\n", strerror(errno));
+            break;
         }
+
+        printf("Chanel (%d) Write -----> %d bytes.\n", fd, n);
+
     }
 
-    return -1;
+    final:
+    {
+        close(fd);
+        printf("Close chanel (%d).\n", fd);
+    }
+
 }

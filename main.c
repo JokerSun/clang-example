@@ -1,7 +1,7 @@
-#include "net/constants.h"
-#include "net/io_multiplex_echo_server.h"
+#include "include/constants.h"
+#include "include/splice_zero_copy_echo_server.h"
 
 int main() {
-    start_io_multi_echo_server(SERVER_PORT);
+    start_splice_pipe_server(SERVER_PORT);
     return 0;
 }

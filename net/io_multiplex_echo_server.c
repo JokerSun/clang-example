@@ -2,7 +2,7 @@
 // Created by lql on 2020/3/18.
 //
 
-#include "constants.h"
+#include "../include/constants.h"
 #include <pthread.h>
 #include <stdio.h>
 #include <string.h>
@@ -11,7 +11,7 @@
 #include <stdbool.h>
 #include <netinet/in.h>
 #include <errno.h>
-#include "utils.h"
+#include "../include/utils.h"
 #include <sys/poll.h>
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
@@ -30,7 +30,7 @@ static int select_write(int fd, char *buffer, int size);
 
 void start_io_multi_echo_server(int port) {
 
-    printf("No blocking io echo server starting.\n");
+    printf("IO multiplex echo server starting.\n");
 
     /* define fd, address */
 
