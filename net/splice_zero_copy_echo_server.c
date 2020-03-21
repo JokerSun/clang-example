@@ -106,13 +106,13 @@ static void process(const int *pfd) {
 
     printf("Accept channel '%d'.\n", fd);
 
-//    /* set socket busy poll */
-//    int val = 10 * 1000; // 10ms
-//    int return_value = setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL, &val, sizeof(val));
-//    if (-1 == return_value) {
-//        printf("Set socket busy poll error (%s).\n", strerror(errno));
-//        goto final;
-//    }
+    /* set socket busy poll */
+    int val = 10 * 1000; // 10ms
+    int return_value = setsockopt(fd, SOL_SOCKET, SO_BUSY_POLL, &val, sizeof(val));
+    if (-1 == return_value) {
+        printf("Set socket busy poll error (%s).\n", strerror(errno));
+        goto final;
+    }
 
     /* create pipe */
 
